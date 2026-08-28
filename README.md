@@ -1,6 +1,6 @@
 # IIME
 
-KeePass Password Safe 2 的中文输入法切换插件
+KeePass Password Safe 2 的中文输入法切换插件，（兼容[RIME](https://rime.im/)）
 
 [说明](#说明) | [更新日志](#更新日志) | [原理](#原理) | [操作步骤](#操作步骤) 
 

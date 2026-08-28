@@ -1,4 +1,4 @@
-﻿using KeePass.Plugins;
+using KeePass.Plugins;
 using KeePass.Util;
 using KeePass.Util.Spr;
 using System;
@@ -14,9 +14,10 @@ namespace IIME
     public sealed class IIMEExt : Plugin
     {
 
-        private const string UPDATEURL = "https://raw.githubusercontent.com/iuuniang/IIME/main/update.txt";
+        private const string UPDATEURL = "https://raw.githubusercontent.com/bassce/IIME/refs/heads/main/update.txt";
 
         private IPluginHost m_host = null;
+        private bool m_restoreImeAfterAutoType = false;
         public override bool Initialize(IPluginHost host)
         {
             if (host == null) return false;
@@ -50,15 +51,25 @@ namespace IIME
 
         private void OnAutoTypeFilterSendPre(object sender, AutoTypeEventArgs autoTypeEventArgs)
         {
-            // 关闭IME（切换到英文）
-            InputMethodController.SetIMEStatus(0u);
+            m_restoreImeAfterAutoType = InputMethodController.GetIMEStatus();
+
+            if (m_restoreImeAfterAutoType)
+            {
+                InputMethodController.SetIMEStatus(0u);
+                Thread.Sleep(50);
+            }
         }
 
         private void OnAutoTypeSendPost(object sender, AutoTypeEventArgs autoTypeEventArgs)
         {
-            // 添加短暂延迟，确保目标应用程序已完成输入处理
             Thread.Sleep(100);
-            InputMethodController.SetIMEStatus(1u);
+
+            if (m_restoreImeAfterAutoType)
+            {
+                InputMethodController.SetIMEStatus(1u);
+            }
+
+            m_restoreImeAfterAutoType = false;
         }
 
 
@@ -156,7 +167,6 @@ namespace IIME
                 if (hWnd == IntPtr.Zero)
                 {
                     hWnd = GetForegroundWindow();
-                    // 获取实际拥有焦点的窗口
                     IntPtr? focusWindow = GetFocus(hWnd, true);
                     if (focusWindow != null && focusWindow.Value != IntPtr.Zero)
                     {
@@ -171,14 +181,13 @@ namespace IIME
                 {
                     hWnd = GetForegroundWindow();
                 }
-                return Control(hWnd, IMC_GETOPENSTATUS) != IntPtr.Zero; //返回值 0:英文 1:中文
+                return Control(hWnd, IMC_GETOPENSTATUS) != IntPtr.Zero;
             }
             public static IntPtr? SetConversionMode(uint cMode, IntPtr hWnd = default(IntPtr))
             {
                 if (hWnd == IntPtr.Zero)
                 {
                     hWnd = GetForegroundWindow();
-                    // 获取实际拥有焦点的窗口
                     IntPtr? focusWindow = GetFocus(hWnd, true);
                     if (focusWindow != null && focusWindow.Value != IntPtr.Zero)
                     {

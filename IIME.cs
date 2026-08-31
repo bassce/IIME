@@ -2,6 +2,7 @@ using KeePass.Plugins;
 using KeePass.Util;
 using KeePass.Util.Spr;
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -17,7 +18,8 @@ namespace IIME
         private const string UPDATEURL = "https://raw.githubusercontent.com/bassce/IIME/refs/heads/main/update.txt";
 
         private IPluginHost m_host = null;
-        private bool m_restoreImeAfterAutoType = false;
+        private bool m_restoreWindowsImeAfterAutoType = false;
+        private bool m_restoreRimeAfterAutoType = false;
         public override bool Initialize(IPluginHost host)
         {
             if (host == null) return false;
@@ -51,12 +53,98 @@ namespace IIME
 
         private void OnAutoTypeFilterSendPre(object sender, AutoTypeEventArgs autoTypeEventArgs)
         {
-            m_restoreImeAfterAutoType = InputMethodController.GetIMEStatus();
+            Thread.Sleep(200);
 
-            if (m_restoreImeAfterAutoType)
+            m_restoreWindowsImeAfterAutoType = false;
+            m_restoreRimeAfterAutoType = false;
+
+            bool preliminaryWindowsImeState = InputMethodController.GetIMEStatus();
+            bool preliminaryOpenStatus = InputMethodController.GetOpenStatusForTest();
+
+            Thread.Sleep(80);
+
+            bool windowsImeWasChinese = InputMethodController.GetIMEStatus();
+            bool openStatusBefore = InputMethodController.GetOpenStatusForTest();
+
+            if (windowsImeWasChinese)
             {
+                m_restoreWindowsImeAfterAutoType = true;
                 InputMethodController.SetIMEStatus(0u);
                 Thread.Sleep(50);
+            }
+
+            if (IsWeaselRunning())
+            {
+                if (!windowsImeWasChinese && !openStatusBefore)
+                    m_restoreRimeAfterAutoType = true;
+
+                TrySetRimeMode("/ascii");
+                Thread.Sleep(120);
+            }
+        }
+
+        private bool IsWeaselRunning()
+        {
+            try
+            {
+                Process[] processes = Process.GetProcessesByName("WeaselServer");
+                bool running = (processes != null && processes.Length > 0);
+                if (processes != null)
+                {
+                    foreach (Process process in processes)
+                        process.Dispose();
+                }
+                return running;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private string FindWeaselServer()
+        {
+            try
+            {
+                string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+                string rimeRoot = System.IO.Path.Combine(programFiles, "Rime");
+                if (!System.IO.Directory.Exists(rimeRoot)) return null;
+
+                string[] files = System.IO.Directory.GetFiles(
+                    rimeRoot,
+                    "WeaselServer.exe",
+                    System.IO.SearchOption.AllDirectories);
+
+                if (files == null || files.Length == 0) return null;
+                return files[0];
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private bool TrySetRimeMode(string argument)
+        {
+            try
+            {
+                string weaselServer = FindWeaselServer();
+                if (String.IsNullOrEmpty(weaselServer)) return false;
+
+                ProcessStartInfo psi = new ProcessStartInfo();
+                psi.FileName = weaselServer;
+                psi.Arguments = argument;
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+
+                Process process = Process.Start(psi);
+                if (process != null) process.Dispose();
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -64,14 +152,20 @@ namespace IIME
         {
             Thread.Sleep(100);
 
-            if (m_restoreImeAfterAutoType)
+            if (m_restoreRimeAfterAutoType && IsWeaselRunning())
+            {
+                TrySetRimeMode("/nascii");
+                Thread.Sleep(80);
+            }
+
+            if (m_restoreWindowsImeAfterAutoType)
             {
                 InputMethodController.SetIMEStatus(1u);
             }
 
-            m_restoreImeAfterAutoType = false;
+            m_restoreWindowsImeAfterAutoType = false;
+            m_restoreRimeAfterAutoType = false;
         }
-
 
 
         public static class InputMethodController
@@ -162,6 +256,16 @@ namespace IIME
                 if ((convMode & IME_CMODE_NOCONVERSION) != 0) { return false; }
                 return opened && ((convMode & IME_CMODE_LANGUAGE) != 0);
             }
+            public static bool GetOpenStatusForTest(IntPtr hWnd = default(IntPtr))
+            {
+                if (hWnd == IntPtr.Zero)
+                {
+                    hWnd = GetForegroundWindow();
+                    hWnd = GetFocus(hWnd, true) ?? hWnd;
+                }
+                return GetOpenStatus(hWnd);
+            }
+
             private static IntPtr? SetOpenStatus(uint status, IntPtr hWnd = default(IntPtr))
             {
                 if (hWnd == IntPtr.Zero)
